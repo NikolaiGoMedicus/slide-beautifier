@@ -1,4 +1,4 @@
-export type PresetId = 'professional' | 'modern' | 'minimalist' | 'vibrant' | 'corporate';
+export type PresetId = 'professional' | 'modern' | 'minimalist' | 'vibrant' | 'corporate' | 'gomedicus';
 
 export type AspectRatio = '16:9' | '4:3' | '1:1' | 'auto';
 
