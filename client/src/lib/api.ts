@@ -247,12 +247,53 @@ export async function checkPptxDependencies(): Promise<PptxDependencyCheck> {
   return response.json();
 }
 
-export interface CreatePptxJobInput {
+export interface ExtractPptxInput {
   pptxData: string; // base64
   filename: string;
+}
+
+export interface ExtractPptxResponse {
+  extractionId: string;
+  slideCount: number;
+  estimatedCost: number;
+  dimensions: {
+    width: number;
+    height: number;
+  };
+  slides: Array<{
+    slideNumber: number;
+    thumbnail: string;
+  }>;
+}
+
+export async function extractPptxSlides(input: ExtractPptxInput): Promise<ExtractPptxResponse> {
+  const response = await fetch(`${API_URL}/api/pptx/extract`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(input),
+  });
+
+  if (response.status === 401) {
+    clearStoredToken();
+    throw new Error('Authentication required');
+  }
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'Failed to extract PPTX slides');
+  }
+
+  return response.json();
+}
+
+export interface CreatePptxJobInput {
+  pptxData?: string; // base64 (optional if extractionId provided)
+  filename?: string; // optional if extractionId provided
   prompt: string;
   preset?: string;
   aspectRatio?: string;
+  extractionId?: string; // from /extract endpoint
+  selectedSlides?: number[]; // slide numbers to beautify (if not provided, all slides)
 }
 
 export async function createPptxJob(input: CreatePptxJobInput): Promise<CreatePptxJobResponse> {
@@ -304,6 +345,26 @@ export async function getPptxSlide(jobId: number, slideId: number): Promise<Pptx
   return response.json();
 }
 
+export interface PptxSlideThumbnail {
+  id: number;
+  slideNumber: number;
+  status: string;
+  originalThumbnail: string;
+  beautifiedThumbnail: string | null;
+}
+
+export async function getPptxSlideThumbnail(jobId: number, slideId: number): Promise<PptxSlideThumbnail> {
+  const response = await fetch(`${API_URL}/api/pptx/${jobId}/slides/${slideId}/thumbnail`, {
+    headers: getAuthHeaders(),
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to get PPTX slide thumbnail');
+  }
+
+  return response.json();
+}
+
 export async function retryPptxSlide(jobId: number, slideId: number): Promise<void> {
   const response = await fetch(`${API_URL}/api/pptx/${jobId}/slides/${slideId}/retry`, {
     method: 'POST',
@@ -329,4 +390,38 @@ export async function cancelPptxJob(jobId: number): Promise<void> {
 export function getPptxDownloadUrl(jobId: number): string {
   const token = getStoredToken();
   return `${API_URL}/api/pptx/${jobId}/download?token=${token}`;
+}
+
+export interface PptxJobSummary {
+  id: number;
+  status: string;
+  filename: string;
+  totalSlides: number;
+  completedSlides: number;
+  failedSlides: number;
+  preset: string | null;
+  estimatedCost: number | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export interface PptxJobsListResponse {
+  jobs: PptxJobSummary[];
+}
+
+export async function getPptxJobs(limit = 20, offset = 0): Promise<PptxJobsListResponse> {
+  const response = await fetch(`${API_URL}/api/pptx?limit=${limit}&offset=${offset}`, {
+    headers: getAuthHeaders(),
+  });
+
+  if (response.status === 401) {
+    clearStoredToken();
+    throw new Error('Authentication required');
+  }
+
+  if (!response.ok) {
+    throw new Error('Failed to get PPTX jobs');
+  }
+
+  return response.json();
 }
