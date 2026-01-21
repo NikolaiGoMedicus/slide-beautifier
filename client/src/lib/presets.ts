@@ -1,4 +1,5 @@
 import type { Preset, PresetId } from '@/types';
+import { gomedicus, buildBrandPrompt } from './styles';
 
 export const PRESETS: Record<PresetId, Preset> = {
   professional: {
@@ -60,6 +61,12 @@ Composition: Apply a conservative, symmetrical layout with clear structure. Use 
 Style: Employ a classic business color palette featuring navy blue, charcoal gray, and white with gold or burgundy accents. Use traditional serif fonts (similar to Georgia or Times) for headlines paired with clean sans-serif for body text. Include subtle professional textures or patterns.
 
 Maintain all original text content exactly as displayed, enhancing it with formal typography and conservative styling. The design should feel established and trustworthy. Render at 4K resolution with professional text clarity.`,
+  },
+  gomedicus: {
+    id: 'gomedicus',
+    name: 'Gomedicus',
+    description: gomedicus.description,
+    prompt: buildBrandPrompt(gomedicus),
   },
 };
 
