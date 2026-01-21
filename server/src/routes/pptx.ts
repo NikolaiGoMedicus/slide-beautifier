@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from 'express';
+import fs from 'fs';
 import {
   createPptxJob,
   getPptxJob,
@@ -18,7 +19,7 @@ import {
   processPptxJob,
   isProcessingPptxJob,
   cancelPptxJob,
-  getPptxResult,
+  getPptxResultPath,
 } from '../services/pptxProcessor.js';
 
 export const pptxRouter = Router();
@@ -271,7 +272,7 @@ pptxRouter.post('/:jobId/cancel', (req: Request, res: Response): void => {
 });
 
 // Download beautified PPTX
-pptxRouter.get('/:jobId/download', (req: Request, res: Response): void => {
+pptxRouter.get('/:jobId/download', async (req: Request, res: Response): Promise<void> => {
   const jobId = parseInt(req.params.jobId as string);
 
   if (isNaN(jobId)) {
@@ -286,10 +287,10 @@ pptxRouter.get('/:jobId/download', (req: Request, res: Response): void => {
     return;
   }
 
-  const pptxBuffer = getPptxResult(jobId);
+  const filePath = await getPptxResultPath(jobId);
 
-  if (!pptxBuffer) {
-    res.status(404).json({ error: 'PPTX result not found (may have expired)' });
+  if (!filePath) {
+    res.status(404).json({ error: 'PPTX result not found (may have been deleted)' });
     return;
   }
 
@@ -299,8 +300,10 @@ pptxRouter.get('/:jobId/download', (req: Request, res: Response): void => {
 
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.presentationml.presentation');
   res.setHeader('Content-Disposition', `attachment; filename="${downloadFilename}"`);
-  res.setHeader('Content-Length', pptxBuffer.length);
-  res.send(pptxBuffer);
+
+  // Stream the file
+  const fileStream = fs.createReadStream(filePath);
+  fileStream.pipe(res);
 });
 
 // List all jobs

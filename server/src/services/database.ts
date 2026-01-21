@@ -79,10 +79,18 @@ db.exec(`
     slide_width REAL,
     slide_height REAL,
     estimated_cost REAL,
+    result_file_path TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     completed_at DATETIME
   )
 `);
+
+// Migration: Add result_file_path column if it doesn't exist
+try {
+  db.exec(`ALTER TABLE pptx_jobs ADD COLUMN result_file_path TEXT`);
+} catch {
+  // Column already exists, ignore
+}
 
 // PPTX Slides table
 db.exec(`
@@ -345,6 +353,7 @@ export interface PptxJob {
   slide_width: number | null;
   slide_height: number | null;
   estimated_cost: number | null;
+  result_file_path: string | null;
   created_at: string;
   completed_at: string | null;
 }
@@ -488,6 +497,11 @@ export function resetPptxSlide(id: number): void {
 export function decrementPptxFailed(jobId: number): void {
   const stmt = db.prepare('UPDATE pptx_jobs SET completed_slides = completed_slides - 1, failed_slides = failed_slides - 1 WHERE id = ?');
   stmt.run(jobId);
+}
+
+export function setPptxResultPath(jobId: number, filePath: string): void {
+  const stmt = db.prepare('UPDATE pptx_jobs SET result_file_path = ? WHERE id = ?');
+  stmt.run(filePath, jobId);
 }
 
 export default db;

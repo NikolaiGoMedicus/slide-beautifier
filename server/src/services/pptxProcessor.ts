@@ -1,3 +1,6 @@
+import fs from 'fs/promises';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import {
   getPptxJob,
   getNextPendingPptxSlide,
@@ -5,23 +8,45 @@ import {
   updatePptxJobStatus,
   updatePptxSlideStatus,
   incrementPptxCompleted,
+  setPptxResultPath,
 } from './database.js';
 import { generateImage } from './gemini.js';
 import { createPptxFromImages, type SlideImage } from './pptxService.js';
 import type { MimeType, AspectRatio } from '../types/index.js';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PPTX_OUTPUT_DIR = path.join(__dirname, '../../data/pptx');
+
+// Ensure output directory exists
+async function ensureOutputDir(): Promise<void> {
+  try {
+    await fs.mkdir(PPTX_OUTPUT_DIR, { recursive: true });
+  } catch (err) {
+    console.error('Failed to create PPTX output directory:', err);
+  }
+}
+
+// Initialize on module load
+ensureOutputDir();
+
 // Track active PPTX processing
 const activeJobs = new Map<number, boolean>();
-
-// Store generated PPTX files temporarily (in production, use file storage or database)
-const pptxResults = new Map<number, Buffer>();
 
 export function isProcessingPptxJob(jobId: number): boolean {
   return activeJobs.get(jobId) === true;
 }
 
-export function getPptxResult(jobId: number): Buffer | undefined {
-  return pptxResults.get(jobId);
+export async function getPptxResultPath(jobId: number): Promise<string | null> {
+  const job = getPptxJob(jobId);
+  if (!job?.result_file_path) return null;
+
+  // Verify file exists
+  try {
+    await fs.access(job.result_file_path);
+    return job.result_file_path;
+  } catch {
+    return null;
+  }
 }
 
 export async function processPptxJob(jobId: number): Promise<void> {
@@ -141,11 +166,17 @@ export async function processPptxJob(jobId: number): Promise<void> {
             height: finalJob.slide_height || 5.625,
           });
 
-          // Store the result
-          pptxResults.set(jobId, pptxBuffer);
+          // Save to disk
+          await ensureOutputDir();
+          const filename = `job-${jobId}-${Date.now()}.pptx`;
+          const filePath = path.join(PPTX_OUTPUT_DIR, filename);
+          await fs.writeFile(filePath, pptxBuffer);
+
+          // Store file path in database
+          setPptxResultPath(jobId, filePath);
 
           updatePptxJobStatus(jobId, 'completed');
-          console.log(`PPTX job ${jobId} completed, result size: ${pptxBuffer.length} bytes`);
+          console.log(`PPTX job ${jobId} completed, saved to: ${filePath} (${pptxBuffer.length} bytes)`);
         } catch (error) {
           console.error(`Failed to assemble PPTX for job ${jobId}:`, error);
           updatePptxJobStatus(jobId, 'failed');
@@ -161,16 +192,4 @@ export async function processPptxJob(jobId: number): Promise<void> {
 
 export function cancelPptxJob(jobId: number): void {
   activeJobs.set(jobId, false);
-}
-
-// Cleanup old results (call periodically)
-export function cleanupOldResults(_maxAgeMs: number = 3600000): void {
-  // In a production system, you'd track creation time with _maxAgeMs
-  // For now, we just limit the size
-  if (pptxResults.size > 100) {
-    const keysToDelete = Array.from(pptxResults.keys()).slice(0, 50);
-    for (const key of keysToDelete) {
-      pptxResults.delete(key);
-    }
-  }
 }
