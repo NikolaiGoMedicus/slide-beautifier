@@ -10,6 +10,38 @@ const PptxGenJS = (PptxGenJSModule as any).default || PptxGenJSModule;
 
 const execAsync = promisify(exec);
 
+/**
+ * Resolve the LibreOffice binary path.
+ * Tries SOFFICE_BIN env var, then `soffice` in PATH, then platform-specific
+ * default locations. Returns null if LibreOffice cannot be found.
+ *
+ * On macOS, `brew install --cask libreoffice` does not symlink soffice into
+ * PATH by default, so we fall back to the app bundle location.
+ */
+let cachedSofficePath: string | null = null;
+
+async function resolveSoffice(): Promise<string | null> {
+  if (cachedSofficePath) return cachedSofficePath;
+
+  const candidates: string[] = [];
+  if (process.env.SOFFICE_BIN) candidates.push(process.env.SOFFICE_BIN);
+  candidates.push('soffice');
+  if (process.platform === 'darwin') {
+    candidates.push('/Applications/LibreOffice.app/Contents/MacOS/soffice');
+  }
+
+  for (const candidate of candidates) {
+    try {
+      await execAsync(`"${candidate}" --version`);
+      cachedSofficePath = candidate;
+      return candidate;
+    } catch {
+      // try next candidate
+    }
+  }
+  return null;
+}
+
 export interface SlideImage {
   slideNumber: number;
   imageData: string; // base64
@@ -40,8 +72,14 @@ export async function extractSlidesFromPptx(pptxBuffer: Buffer): Promise<{
     await fs.writeFile(pptxPath, pptxBuffer);
 
     // Convert PPTX to PDF using LibreOffice (soffice on macOS)
+    const soffice = await resolveSoffice();
+    if (!soffice) {
+      throw new Error(
+        'LibreOffice (soffice) not found. Install with: brew install --cask libreoffice'
+      );
+    }
     await execAsync(
-      `soffice --headless --convert-to pdf --outdir "${tempDir}" "${pptxPath}"`,
+      `"${soffice}" --headless --convert-to pdf --outdir "${tempDir}" "${pptxPath}"`,
       { timeout: 120000 } // 2 minute timeout
     );
 
@@ -188,11 +226,13 @@ export async function checkDependencies(): Promise<{
     errors: [] as string[],
   };
 
-  // Check LibreOffice (soffice on macOS)
-  try {
-    await execAsync('soffice --version');
+  // Check LibreOffice (soffice on macOS). Looks in PATH and, on macOS,
+  // falls back to /Applications/LibreOffice.app/Contents/MacOS/soffice.
+  // Override location with SOFFICE_BIN env var.
+  const soffice = await resolveSoffice();
+  if (soffice) {
     result.libreoffice = true;
-  } catch {
+  } else {
     result.errors.push('LibreOffice is not installed. Install with: brew install --cask libreoffice');
   }
 
